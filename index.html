@@ -299,6 +299,65 @@
   }
   .toast.show { opacity: 1; }
 
+
+  /* ── daily tasks ── */
+  .task-card {
+    background: var(--surface2); border: 0.5px solid var(--border);
+    border-radius: var(--radius); padding: 0.65rem 0.75rem;
+    margin-bottom: 0.5rem; display: flex; align-items: center;
+    gap: 10px; transition: border-color 0.15s;
+    min-height: 48px;
+  }
+  .task-card.done { opacity: 0.5; }
+  .task-card.done .task-text { text-decoration: line-through; color: var(--text-muted); }
+  .task-check {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 1.5px solid var(--border-strong);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-size: 13px; background: transparent;
+    cursor: pointer; transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .task-card.done .task-check {
+    background: var(--green); border-color: var(--green); color: #fff;
+  }
+  .task-text {
+    font-size: 14px; flex: 1; line-height: 1.4; color: var(--text);
+    word-break: break-word;
+  }
+  .task-delete {
+    background: transparent; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 18px; padding: 4px 6px;
+    border-radius: 6px; flex-shrink: 0; line-height: 1;
+    -webkit-tap-highlight-color: transparent; min-width: 32px; min-height: 32px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .task-delete:active { color: var(--red-txt); background: var(--surface); }
+  .add-task-row {
+    display: flex; gap: 8px; margin-top: 0.75rem; align-items: center;
+  }
+  .add-task-input {
+    flex: 1; background: var(--surface2); border: 0.5px solid var(--border);
+    border-radius: var(--radius); padding: 10px 12px;
+    font-size: 14px; color: var(--text); outline: none;
+    font-family: inherit; min-height: 44px;
+    transition: border-color 0.15s;
+  }
+  .add-task-input:focus { border-color: var(--green); }
+  .add-task-input::placeholder { color: var(--text-muted); }
+  .add-task-btn {
+    background: var(--green); border: none; border-radius: var(--radius);
+    color: #fff; font-size: 22px; font-weight: 300; cursor: pointer;
+    width: 44px; height: 44px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent; transition: opacity 0.15s;
+  }
+  .add-task-btn:active { opacity: 0.8; }
+  .tasks-empty {
+    text-align: center; color: var(--text-muted); font-size: 14px;
+    padding: 2rem 1rem; line-height: 1.6;
+  }
+
   /* hover only on real pointer devices */
   @media (hover: hover) {
     .quest-card:hover { border-color: var(--border-strong); }
@@ -343,6 +402,7 @@
   <div class="tabs">
     <button class="tab active" onclick="setTab('main')">Main Quests</button>
     <button class="tab" onclick="setTab('side')">Side Quests</button>
+    <button class="tab" onclick="setTab('tasks')">Daily Tasks</button>
   </div>
 
   <!-- main view -->
@@ -363,6 +423,33 @@
       <div class="side-grid" id="sideGrid"></div>
       <p class="pool-info" id="sidePoolInfo"></p>
     </div>
+  </div>
+</div>
+
+
+<!-- daily tasks view -->
+<div id="tasksView" style="display:none">
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Daily Tasks</span>
+      <span class="countdown cd-daily" id="tasksCountdown">⏱ --</span>
+    </div>
+
+    <div id="tasksList"></div>
+
+    <div class="add-task-row">
+      <input
+        class="add-task-input"
+        id="taskInput"
+        type="text"
+        placeholder="Add a task... (e.g. Brush teeth)"
+        maxlength="80"
+        onkeydown="if(event.key==='Enter') addTask()"
+      />
+      <button class="add-task-btn" onclick="addTask()">+</button>
+    </div>
+
+    <p class="pool-info" id="tasksInfo"></p>
   </div>
 </div>
 
@@ -751,6 +838,114 @@ function resetAll(){
   closeDebug();
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+//  DAILY TASKS
+// ═══════════════════════════════════════════════════════════════════
+
+function loadTasks() {
+  try { return JSON.parse(localStorage.getItem('sq_tasks') || '[]'); } catch(e) { return []; }
+}
+function saveTasks(tasks) {
+  try { localStorage.setItem('sq_tasks', JSON.stringify(tasks)); } catch(e) {}
+}
+function taskDoneKey() {
+  return 'sq_taskdone_' + (state ? state.dayKey : 0);
+}
+function loadTaskDone() {
+  try { return JSON.parse(localStorage.getItem(taskDoneKey()) || '{}'); } catch(e) { return {}; }
+}
+function saveTaskDone(done) {
+  try { localStorage.setItem(taskDoneKey(), JSON.stringify(done)); } catch(e) {}
+  try {
+    const prefix = 'sq_taskdone_';
+    const cur = taskDoneKey();
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix) && k !== cur) localStorage.removeItem(k);
+    }
+  } catch(e) {}
+}
+
+function addTask() {
+  const input = document.getElementById('taskInput');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  const tasks = loadTasks();
+  tasks.push({ id: Date.now().toString(), text });
+  saveTasks(tasks);
+  input.value = '';
+  renderTasks();
+  input.focus();
+}
+
+function deleteTask(id) {
+  saveTasks(loadTasks().filter(t => t.id !== id));
+  const done = loadTaskDone();
+  delete done[id];
+  saveTaskDone(done);
+  renderTasks();
+}
+
+function toggleTask(id) {
+  const done = loadTaskDone();
+  done[id] = !done[id];
+  saveTaskDone(done);
+  renderTasks();
+}
+
+function renderTasks() {
+  const list = document.getElementById('tasksList');
+  const info = document.getElementById('tasksInfo');
+  const cd   = document.getElementById('tasksCountdown');
+  if (!list) return;
+
+  if (cd) cd.textContent = '⏱ ' + fmt(msUntil(nextDay(now())));
+
+  const tasks = loadTasks();
+  const done  = loadTaskDone();
+
+  if (tasks.length === 0) {
+    list.innerHTML = '<div class="tasks-empty">No tasks yet.<br>Tap <strong>+</strong> to add your first daily task.</div>';
+    if (info) info.textContent = '';
+    return;
+  }
+
+  list.innerHTML = '';
+  const sorted = [...tasks].sort((a, b) => (done[a.id]?1:0) - (done[b.id]?1:0));
+
+  sorted.forEach(task => {
+    const isDone = !!done[task.id];
+    const div = document.createElement('div');
+    div.className = 'task-card' + (isDone ? ' done' : '');
+
+    const chk = document.createElement('div');
+    chk.className = 'task-check';
+    chk.textContent = isDone ? '✓' : '';
+    if (isDone) chk.style.cssText = 'background:var(--green);border-color:var(--green);color:#fff;';
+    chk.addEventListener('click', () => toggleTask(task.id));
+
+    const txt = document.createElement('span');
+    txt.className = 'task-text';
+    txt.textContent = task.text;
+    txt.addEventListener('click', () => toggleTask(task.id));
+
+    const del = document.createElement('button');
+    del.className = 'task-delete';
+    del.innerHTML = '&times;';
+    del.title = 'Remove task';
+    del.addEventListener('click', e => { e.stopPropagation(); deleteTask(task.id); });
+
+    div.appendChild(chk);
+    div.appendChild(txt);
+    div.appendChild(del);
+    list.appendChild(div);
+  });
+
+  const doneCount = tasks.filter(t => done[t.id]).length;
+  if (info) info.textContent = doneCount + ' of ' + tasks.length + ' tasks completed today';
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  TABS & INIT
 // ═══════════════════════════════════════════════════════════════════
@@ -764,7 +959,9 @@ initTheme();
 renderGrade();
 renderMain();
 renderSide();
-setInterval(()=>{ checkResets(); renderMain(); renderGrade(); }, 1000);
+renderTasks();
+renderTasks();
+setInterval(()=>{ checkResets(); renderMain(); renderGrade(); const cd=document.getElementById('tasksCountdown'); if(cd) cd.textContent='⏱ '+fmt(msUntil(nextDay(now()))); }, 1000);
 </script>
 
 <script>
