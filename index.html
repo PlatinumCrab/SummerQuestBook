@@ -299,6 +299,20 @@
   @media (hover:hover) { .quest-card:hover { border-color:var(--border-strong); } .tab:hover:not(.active) { background:var(--surface); } .debug-btn:hover { border-color:var(--border-strong); color:var(--text); } }
   @media (max-width:720px) { .columns { grid-template-columns:1fr; } .main-layout { flex-direction:column; } .grade-row { grid-template-columns:repeat(2,1fr); } }
   @media (max-width:480px) { body { padding:1rem 0.75rem 5rem; } h1 { font-size:19px; } .grade-row { grid-template-columns:repeat(2,1fr); gap:6px; } .grade-card { padding:0.6rem 0.75rem; } .grade-value,.grade-letter { font-size:20px; } .side-grid { grid-template-columns:1fr; } .quest-text { font-size:14px; } .section { padding:0.875rem; } .tab { font-size:13px; padding:8px 12px; } }
+ .task-card{background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius);padding:0.65rem 0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:10px;min-height:48px;}
+.task-card.done{opacity:0.5;}
+.task-card.done .task-text{text-decoration:line-through;color:var(--text-muted);}
+.task-check{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--border-strong);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;background:transparent;cursor:pointer;transition:all 0.2s;}
+.task-card.done .task-check{background:var(--green);border-color:var(--green);color:#fff;}
+.task-text{font-size:14px;flex:1;line-height:1.4;color:var(--text);word-break:break-word;}
+.task-delete{background:transparent;border:none;cursor:pointer;color:var(--text-muted);font-size:22px;border-radius:6px;flex-shrink:0;min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center;}
+.task-delete:active{color:var(--red-txt);}
+.add-task-row{display:flex;gap:8px;margin-top:0.75rem;align-items:center;}
+.add-task-input{flex:1;background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;font-size:14px;color:var(--text);outline:none;font-family:inherit;min-height:44px;}
+.add-task-input:focus{border-color:var(--green);}
+.add-task-input::placeholder{color:var(--text-muted);}
+.add-task-btn{background:var(--green);border:none;border-radius:var(--radius);color:#fff;font-size:26px;cursor:pointer;width:44px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.tasks-empty{text-align:center;color:var(--text-muted);font-size:14px;padding:2rem 1rem;line-height:1.6;}
 </style>
 </head>
 <body>
@@ -384,8 +398,25 @@
   <button class="debug-btn" id="themeToggleBtn" onclick="toggleLightMode()">☀️ Light mode</button>
   <div class="debug-section-label">Danger zone</div>
   <button class="debug-btn danger" onclick="resetAll()">↺ Reset all data</button>
-</div>
+  <!-- daily tasks view -->
+  <div id="tasksView" style="display:none">
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">Daily Tasks</span>
+        <span class="countdown cd-daily" id="tasksCountdown">⏱ --</span>
+      </div>
+      <div id="tasksList"></div>
+      <div class="add-task-row">
+        <input class="add-task-input" id="taskInput" type="text"
+          placeholder="Add a task... (e.g. Brush teeth)" maxlength="80"
+          onkeydown="if(event.key==='Enter') addTask()" />
+        <button class="add-task-btn" onclick="addTask()">+</button>
+      </div>
+      <p class="pool-info" id="tasksInfo"></p>
+    </div>
+  </div>
 
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -749,10 +780,59 @@ function resetAll(){
 // ═══════════════════════════════════════════════════════════════════
 //  TABS & INIT
 // ═══════════════════════════════════════════════════════════════════
+function loadTasks(){try{return JSON.parse(localStorage.getItem('sq_tasks')||'[]');}catch(e){return[];}}
+function saveTasks(t){try{localStorage.setItem('sq_tasks',JSON.stringify(t));}catch(e){}}
+function taskDoneKey(){return 'sq_taskdone_'+(state?state.dayKey:0);}
+function loadTaskDone(){try{return JSON.parse(localStorage.getItem(taskDoneKey())||'{}');}catch(e){return{};}}
+function saveTaskDone(done){
+  try{localStorage.setItem(taskDoneKey(),JSON.stringify(done));}catch(e){}
+  try{const p='sq_taskdone_',c=taskDoneKey();for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&k.startsWith(p)&&k!==c)localStorage.removeItem(k);}}catch(e){}
+}
+function addTask(){
+  const input=document.getElementById('taskInput');
+  const text=(input.value||'').trim();
+  if(!text)return;
+  const tasks=loadTasks();
+  tasks.push({id:Date.now().toString(),text});
+  saveTasks(tasks);input.value='';renderTasks();input.focus();
+}
+function deleteTask(id){
+  saveTasks(loadTasks().filter(t=>t.id!==id));
+  const done=loadTaskDone();delete done[id];saveTaskDone(done);renderTasks();
+}
+function toggleTask(id){const done=loadTaskDone();done[id]=!done[id];saveTaskDone(done);renderTasks();}
+function renderTasks(){
+  const list=document.getElementById('tasksList');
+  const info=document.getElementById('tasksInfo');
+  const cd=document.getElementById('tasksCountdown');
+  if(!list)return;
+  if(cd)cd.textContent='⏱ '+fmt(msUntil(nextDay(now())));
+  const tasks=loadTasks(),done=loadTaskDone();
+  if(tasks.length===0){list.innerHTML='<div class="tasks-empty">No tasks yet.<br>Tap <strong>+</strong> to add your first daily task.</div>';if(info)info.textContent='';return;}
+  list.innerHTML='';
+  [...tasks].sort((a,b)=>(done[a.id]?1:0)-(done[b.id]?1:0)).forEach(task=>{
+    const isDone=!!done[task.id];
+    const div=document.createElement('div');div.className='task-card'+(isDone?' done':'');
+    const chk=document.createElement('div');chk.className='task-check';chk.textContent=isDone?'✓':'';
+    if(isDone)chk.style.cssText='background:var(--green);border-color:var(--green);color:#fff;';
+    chk.addEventListener('click',()=>toggleTask(task.id));
+    const txt=document.createElement('span');txt.className='task-text';txt.textContent=task.text;
+    txt.addEventListener('click',()=>toggleTask(task.id));
+    const del=document.createElement('button');del.className='task-delete';del.innerHTML='&times;';
+    del.addEventListener('click',e=>{e.stopPropagation();deleteTask(task.id);});
+    div.appendChild(chk);div.appendChild(txt);div.appendChild(del);list.appendChild(div);
+  });
+  const doneCount=tasks.filter(t=>done[t.id]).length;
+  if(info)info.textContent=doneCount+' of '+tasks.length+' tasks completed today';
+}
+
 function setTab(tab){
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',(tab==='main'&&i===0)||(tab==='side'&&i===1)));
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',
+    (tab==='main'&&i===0)||(tab==='side'&&i===1)||(tab==='tasks'&&i===2)));
   document.getElementById('mainView').style.display=tab==='main'?'':'none';
   document.getElementById('sideView').style.display=tab==='side'?'':'none';
+  document.getElementById('tasksView').style.display=tab==='tasks'?'':'none';
+  if(tab==='tasks')renderTasks();
 }
 
 initTheme();
