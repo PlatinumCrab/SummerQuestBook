@@ -618,8 +618,8 @@ function showToast(msg) {
 //  MAIN QUESTS
 // ═══════════════════════════════════════════════════════════════════
 function checkResets() {
-  if(now() < skipLockUntil) return;
-  const t=now();
+  if(Date.now() < skipLockUntil) return;
+  const t=Date.now();
   const nowDay=startOfDay(t), nowWeek=startOfWeek(t), nowMonth=startOfMonth(t);
   let changed=false;
   if(state.dayKey!==nowDay)  {state.missedMainXP=(state.missedMainXP||0)+((state.dailyDone||[]).filter(v=>!v).length*XP.daily); state.dayKey=nowDay; state.dayResetAt=t; state.daily=pickUnused(DAILY_POOL,'sq_used_daily',3); state.dailyDone=[false,false,false]; state.dailyCount=(state.dailyCount||1)+1; changed=true;}
